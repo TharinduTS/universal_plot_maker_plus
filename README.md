@@ -1364,7 +1364,7 @@ python universal_plot_maker_plus.py \
   --default-x "Gene name" \
   --default-y "log2_enrichment_penalized" \
   --color-col "Cell type" \
-  -color-choices "Cell type|Cell type group|Cell type class" \
+  --color-choices "Cell type|Cell type group|Cell type class" \
   --filter-cols "Cell type class|Cell type group|Cell type" \
   --search-cols "Gene|Gene name" \
   --details "Gene|Gene name|Cell type|Cell type group|Cell type class|Enrichment score|log2_enrichment|log2_enrichment_penalized|top_percent_Cell_type_count|top_percent_Cell_type_group_count|top_percent_Cell_type_class_count|overall_rank_by_Cell_type|overall_rank_by_Cell_type_group|overall_rank_by_Cell_type_class|rank_within_Cell_type|rank_within_Cell_type_group|rank_within_Cell_type_class|top_percent_Cell_types|top_percent_Cell_type_groups|top_percent_Cell_type_classes" \
