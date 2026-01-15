@@ -1359,15 +1359,15 @@ python universal_plot_maker_plus.py \
   --file top_10k.tsv \
   --out Celltype_Enrichment_V2_1_top_10k.html \
   --plot-type bar \
-  --x-choices "Gene name" \
-  --y-choices "Enrichment score|log2_enrichment|Enrichment score (tau penalized)|log2_enrichment_penalized" \
+  --x-choices "Gene name | Gene" \
+  --y-choices "Enrichment score|log2_enrichment| specificity_tau | Enrichment score (tau penalized)|log2_enrichment_penalized" \
   --default-x "Gene name" \
   --default-y "log2_enrichment_penalized" \
   --color-col "Cell type" \
   --color-choices "Cell type|Cell type group|Cell type class" \
   --filter-cols "Cell type class|Cell type group|Cell type" \
   --search-cols "Gene|Gene name" \
-  --details "Gene|Gene name|Cell type|Cell type group|Cell type class|Enrichment score|log2_enrichment|log2_enrichment_penalized|top_percent_Cell_type_count|top_percent_Cell_type_group_count|top_percent_Cell_type_class_count|overall_rank_by_Cell_type|overall_rank_by_Cell_type_group|overall_rank_by_Cell_type_class|rank_within_Cell_type|rank_within_Cell_type_group|rank_within_Cell_type_class|top_percent_Cell_types|top_percent_Cell_type_groups|top_percent_Cell_type_classes" \
+  --details "Gene|Gene name|Cell type|Cell type group|Cell type class|Enrichment score|log2_enrichment| specificity_tau |log2_enrichment_penalized|top_percent_Cell_type_count|top_percent_Cell_type_group_count|top_percent_Cell_type_class_count|overall_rank_by_Cell_type|overall_rank_by_Cell_type_group|overall_rank_by_Cell_type_class|rank_within_Cell_type|rank_within_Cell_type_group|rank_within_Cell_type_class|top_percent_Cell_types|top_percent_Cell_type_groups|top_percent_Cell_type_classes" \
   --title "Celltype Enrichmnt V 2.1" \
   --dup-policy overlay \
   --sort-primary "overall_rank_by_Cell_type" \
