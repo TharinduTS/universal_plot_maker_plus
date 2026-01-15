@@ -439,6 +439,10 @@ DETAILS_UI = r"""
       </select>
     </div>
     <div>
+      <label><strong>Color by</strong></label><br>
+      <select id="colorBySelect" aria-label="Color by"></select>
+    </div>
+    <div>
       <label><strong>X</strong></label><br>
       <select id="xSelect" aria-label="X column"></select>
     </div>
@@ -536,6 +540,7 @@ DETAILS_UI = r"""
     var resetEl = document.getElementById('resetBtn');
     var exportEl = document.getElementById('exportBtn');
     var detailsEl = document.getElementById('rowDetails');
+    var colorBySelect = document.getElementById('colorBySelect');
 
     // Selected points tracking (by a canonical composite key)
     var selectedKeys = [];
@@ -579,7 +584,16 @@ DETAILS_UI = r"""
 
     // Secondary
     fillSelect(sortSecondary,sortChoices, prevSecondary || UI.sort_secondary || '(none)');
-  
+    
+    //fillselect for color  by
+    var prevColorBy = colorBySelect.value;
+    fillSelect(colorBySelect, (UI.color_choices || []), prevColorBy || UI.color_default || '');
+    fillSelect(colorBySelect, ['(none)'].concat(UI.color_choices || []),
+           UI.color_default || '(none)');
+    var colorCol = colorBySelect.value;
+    if (colorCol === '(none)') colorCol = null;
+
+
     if (firstRender) {
         // Use CLI defaults on first load
         sortPrimaryOrder.value = UI.sort_primary_order || 'desc';
@@ -872,7 +886,39 @@ DETAILS_UI = r"""
 
 
       var detailCols = P.detail_cols || [];
-      var colorCol = P.color_col || null;
+      var colorCol = colorBySelect.value || null;
+
+      // custom color by
+
+      // Build colors for current colorCol (client-side)
+      var colorMap = {}; 
+      var palette = [
+        '#636EFA', '#EF553B', '#00CC96', '#AB63FA', '#FFA15A',
+       '#19D3F3', '#FF6692', '#B6E880', '#FF97FF', '#FECB52'
+      ];
+
+      // Collect unique categories from the rows to be plotted (rowsF)
+      if (colorCol) {
+        var cats = [];
+        for (var i = 0; i < rowsF.length; i++) {
+          var r = rowsF[i];
+          var g = (r[colorCol] != null ? String(r[colorCol]) : '');
+          if (cats.indexOf(g) === -1) cats.push(g);
+        }
+        cats.sort();
+        for (var i = 0; i < cats.length; i++) {
+          colorMap[cats[i]] = palette[i % palette.length];
+        }
+      }
+
+      // Build per-point colors
+      var colors = [];
+      for (var i = 0; i < rowsF.length; i++) {
+        var r = rowsF[i];
+        var gval = colorCol ? String(r[colorCol]) : null;
+        var c = (colorCol && colorMap[gval]) ? colorMap[gval] : '#636EFA';
+        colors.push(c);
+      }
       var colorMap = P.color_map || {};
       var colors = [];
 
@@ -1055,6 +1101,7 @@ DETAILS_UI = r"""
     dupPolicySelect.addEventListener('change', render);
     Object.values(filterEls).forEach(function(sel){ sel.addEventListener('change', render); });
     Object.values(searchEls).forEach(function(box){ box.addEventListener('input', render); });
+    colorBySelect.addEventListener('change', render);
 
     resetEl.addEventListener('click', function(){
       plotTypeSelect.value = (P.plot_type || 'bar');
@@ -1203,6 +1250,7 @@ def main():
     ap.add_argument("--plot-type", default="bar", choices=["bar","scatter","line"], help="Plot type")
     ap.add_argument("--title", default="", help="Figure title")
     ap.add_argument("--color-col", help="Column for group coloring")
+    ap.add_argument("--color-choices",help="Columns allowed for coloring (pipe or comma separated). If omitted, any column can be chosen.")
     ap.add_argument("--x-choices", help="Columns allowed for X axis (bar categorical; scatter/line numeric). Use '|' or ',' to separate.")
     ap.add_argument("--y-choices", help="Columns allowed for Y axis (numeric). Use '|' or ',' to separate.")
     ap.add_argument("--default-x", help="Default X column at load")
@@ -1239,6 +1287,10 @@ def main():
     search_cols = parse_list(args.search_cols)
     filter_defaults = parse_kv_defaults(args.filter_defaults)
     search_defaults = parse_kv_defaults(args.search_defaults)
+    color_choices = (parse_list(args.color_choices) if args.color_choices
+                 else list(df.columns))  # fallback: any column
+    default_color = args.color_col if (args.color_col in df.columns) else ""
+
 
     # Details columns
     if args.details.strip() == "*":
@@ -1289,6 +1341,8 @@ def main():
         "sort_primary_order": args.sort_primary_order,
         "sort_secondary": args.sort_secondary if (args.sort_secondary and args.sort_secondary in df.columns) else "",
         "sort_secondary_order": args.sort_secondary_order,
+        "color_choices": color_choices,
+        "color_default": default_color,   # initial dropdown default
     }
 
     # Persist HTML
@@ -1303,17 +1357,18 @@ if __name__ == "__main__":
 
 python universal_plot_maker_plus.py \
   --file top_10k.tsv \
-  --out top_10k.html \
+  --out Celltype_Enrichment_V2_1_top_10k.html \
   --plot-type bar \
   --x-choices "Gene name" \
   --y-choices "Enrichment score|log2_enrichment|Enrichment score (tau penalized)|log2_enrichment_penalized" \
   --default-x "Gene name" \
   --default-y "log2_enrichment_penalized" \
   --color-col "Cell type" \
+  -color-choices "Cell type|Cell type group|Cell type class" \
   --filter-cols "Cell type class|Cell type group|Cell type" \
   --search-cols "Gene|Gene name" \
   --details "Gene|Gene name|Cell type|Cell type group|Cell type class|Enrichment score|log2_enrichment|log2_enrichment_penalized|top_percent_Cell_type_count|top_percent_Cell_type_group_count|top_percent_Cell_type_class_count|overall_rank_by_Cell_type|overall_rank_by_Cell_type_group|overall_rank_by_Cell_type_class|rank_within_Cell_type|rank_within_Cell_type_group|rank_within_Cell_type_class|top_percent_Cell_types|top_percent_Cell_type_groups|top_percent_Cell_type_classes" \
-  --title "Celltype Enrichmnt V 2.0" \
+  --title "Celltype Enrichmnt V 2.1" \
   --dup-policy overlay \
   --sort-primary "overall_rank_by_Cell_type" \
   --sort-primary-order asc \
