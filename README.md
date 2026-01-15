@@ -1279,3 +1279,94 @@ List of columns exposed as dropdown filters in the HTML viewer.
 ### `--filter-defaults`
 Default filter selections in the format:
 ``
+"Column1=Value1;Column2=Value2"
+Use `__ALL__` to default to "no filtering".
+
+### `--search-cols`
+Columns that get search bars in the UI.
+
+### `--search-defaults`
+Default starting values for search inputs:
+
+"Column1=query;Column2=query"
+
+---
+
+## 📝 Details Panel / Hover Information
+
+### `--details`
+Columns included in:
+- hover tooltip  
+- click‑to‑inspect details panel  
+- TSV export of selected points  
+
+Use:
+- `"*"` to include all columns  
+- `"Col1|Col2|Col3"` for specific columns  
+
+---
+
+## 🔁 Duplicate Handling
+
+### `--dup-policy {overlay,stack,max,mean,median,first,sum}`
+Defines how duplicate X‑values (or X+color pairs) are handled:
+
+| Policy | Description |
+|--------|-------------|
+| `overlay` | Plot duplicates on top of each other (default) |
+| `stack` | Stack duplicates as multiple bars |
+| `max` | Use only the maximum value |
+| `mean` | Use the mean of duplicates |
+| `median` | Use the median |
+| `first` | Keep first occurrence |
+| `sum` | Sum all duplicates |
+
+---
+
+## 🔍 Initial Zoom / Data Window
+
+### `--initial-zoom`
+Number of rows/bars initially shown.  
+More rows remain accessible through sorting or increasing the zoom in the UI.
+
+---
+
+## 🎨 Legend & Layout
+
+### `--show-legend`
+If supplied, legend is visible by default.  
+Omit to hide the legend.
+
+### `--lang`
+Set the HTML `<html lang="...">` attribute.
+
+---
+
+## 📦 Self‑contained HTML
+
+### `--self-contained`
+Embed Plotly.js directly in the output HTML.  
+Use this when sharing the HTML offline.
+
+---
+
+## 📤 Example Command
+
+```bash
+python universal_plot_maker_plus.py \
+    --file top_10k.tsv \
+    --out top_10k.html \
+    --plot-type bar \
+    --x-choices "Gene name" \
+    --y-choices "Enrichment score|log2_enrichment|log2_enrichment_penalized" \
+    --default-x "Gene name" \
+    --default-y "log2_enrichment_penalized" \
+    --color-col "Cell type" \
+    --filter-cols "Cell type class|Cell type group|Cell type" \
+    --search-cols "Gene|Gene name" \
+    --details "*" \
+    --sort-primary "overall_rank_by_Cell_type" \
+    --sort-primary-order asc \
+    --initial-zoom 100 \
+    --self-contained
+```
