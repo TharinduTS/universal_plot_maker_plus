@@ -256,10 +256,6 @@ def build_figure_payload(
 
     df = _sort_df(df)
 
-    # ---- Top N subset ----
-    if top_n is not None and top_n > 0:
-        df = df.head(top_n).copy()
-
     # ---- Colors ----
     if color_col and color_col in df.columns:
         cats = sorted(df[color_col].astype(str).unique())
@@ -424,6 +420,7 @@ def _make_hover_template(detail_cols: List[str], orientation: str = "v") -> str:
     for i, c in enumerate(detail_cols):
         lines.append(f"{c}: %{{customdata[{i}]}}")
 
+
     return "<br>".join(lines) + "<extra></extra>"
 
 # ------------------------------
@@ -452,6 +449,18 @@ DETAILS_UI = r"""
     <div>
       <label><strong>Bars to show</strong></label><br>
       <input id="barsCount" type="number" value="100" min="1" step="1" style="width:80px;">
+    </div>
+    <div>
+      <label><strong>Duplicate policy</strong></label><br>
+      <select id="dupPolicySelect" aria-label="Duplicate policy">
+        <option value="overlay">overlay</option>
+        <option value="stack">stack</option>
+        <option value="max">max</option>
+        <option value="mean">mean</option>
+        <option value="median">median</option>
+        <option value="first">first</option>
+        <option value="sum">sum</option>
+      </select>
     </div>
     <div>
       <label><strong>Primary sort</strong></label><br>
@@ -510,7 +519,10 @@ DETAILS_UI = r"""
     var sortChoices = UI.sort_choices || []; // allowed sort columns
 
     var dupPolicy = P.dup_policy || "overlay";
+    var dupPolicySelect = document.getElementById('dupPolicySelect');
+    dupPolicySelect.value = dupPolicy;
 
+    var firstRender = true;
     var plotTypeSelect = document.getElementById('plotTypeSelect');
     var xSelect = document.getElementById('xSelect');
     var ySelect = document.getElementById('ySelect');
@@ -555,10 +567,29 @@ DETAILS_UI = r"""
     }
 
     // Sort choices
-    fillSelect(sortPrimary, sortChoices, UI.sort_primary || '');
-    fillSelect(sortSecondary, ['(none)'].concat(sortChoices), UI.sort_secondary || '(none)');
-    sortPrimaryOrder.value = (UI.sort_primary_order || 'desc');
-    sortSecondaryOrder.value = (UI.sort_secondary_order || 'desc');
+
+    var prevSecondary = sortSecondary.value;
+    var prevSecondaryOrder = sortSecondaryOrder.value;
+
+    var prevPrimary = sortPrimary.value;
+    var prevPrimaryOrder = sortPrimaryOrder.value;
+    
+    // Primary
+    fillSelect(sortPrimary, sortChoices, prevPrimary || UI.sort_primary || '');
+
+    // Secondary
+    fillSelect(sortSecondary,sortChoices, prevSecondary || UI.sort_secondary || '(none)');
+  
+    if (firstRender) {
+        // Use CLI defaults on first load
+        sortPrimaryOrder.value = UI.sort_primary_order || 'desc';
+        sortSecondaryOrder.value = UI.sort_secondary_order || 'desc';
+    } else {
+        // Use user-selected values after first render
+        sortPrimaryOrder.value = prevPrimaryOrder || 'desc';
+        sortSecondaryOrder.value = prevSecondaryOrder || 'desc';
+    }
+
 
     // Build filter dropdowns
     var filterEls = {}; // col -> select
@@ -672,9 +703,65 @@ DETAILS_UI = r"""
       });
       return filtered;
     }
+    // Apply client dedupe function
+    
+    function applyClientDedupe(rows, policy, xcol, colorCol) {
+      policy = policy || "overlay";
+      if (policy === "overlay" || policy === "stack")
+        return rows;  // no collapsing
+
+      // collapse duplicates into one row per category
+      function key(r) {
+        return colorCol ? (String(r[xcol]) + "||" + String(r[colorCol])) :
+                          String(r[xcol]);
+      }
+
+      var groups = {};
+      for (var r of rows) {
+        var k = key(r);
+        if (!(k in groups)) groups[k] = [];
+        groups[k].push(r);
+      }
+
+      var valCol = ySelect.value;
+      var output = [];
+
+      for (var k in groups) {
+        var g = groups[k];
+        var base = g[0];  // row to copy metadata from
+        var nums = g.map(r => Number(r[valCol])).filter(n => !Number.isNaN(n));
+
+        if (nums.length === 0) nums = [0];
+
+        var newVal;
+        switch (policy) {
+          case "first":  newVal = nums[0]; break;
+          case "max":    newVal = Math.max(...nums); break;
+          case "mean":   newVal = nums.reduce((a,b)=>a+b,0)/nums.length; break;
+          case "median":
+            nums.sort((a,b)=>a-b);
+            newVal = nums[Math.floor(nums.length/2)];
+            break;
+          case "sum":    newVal = nums.reduce((a,b)=>a+b,0); break;
+          default:       newVal = nums[0];
+        }
+
+        var newRow = JSON.parse(JSON.stringify(base));
+        newRow[valCol] = newVal;
+        output.push(newRow);
+      }
+
+      return output;
+    }
+
 
     // Sort function
     function sortRows(rows, pcol, pord, scol, sord) {
+    
+    // Normalize sort column names
+    if (pcol) pcol = pcol.trim();
+    if (scol) scol = scol.trim();
+
       if (!Array.isArray(rows)) return [];
       var data = rows.slice();
       function asNum(v) {
@@ -686,32 +773,61 @@ DETAILS_UI = r"""
         }
         return v;
       }
-      function cmp(a, b, col, ord) {
-        var va = asNum(a[col]);
-        var vb = asNum(b[col]);
-        var asc = (ord || 'asc').toLowerCase() === 'asc';
-        if (va == null && vb != null) return asc ? 1 : -1;
-        if (va != null && vb == null) return asc ? -1 : 1;
-        if (va == null && vb == null) return 0;
-        if (typeof va === 'number' && typeof vb === 'number') {
-          return asc ? (va - vb) : (vb - va);
-        }
-        // string compare
-        var sa = String(va);
-        var sb = String(vb);
-        return asc ? sa.localeCompare(sb) : sb.localeCompare(sa);
+      
+    
+    
+    function cmp(a, b, col, ord) {
+      let asc = (ord || 'asc').toLowerCase() === 'asc';
+
+      let va = a[col];
+      let vb = b[col];
+
+      // Convert if possible
+      let na = Number(va);
+      let nb = Number(vb);
+
+      let a_is_num = !Number.isNaN(na);
+      let b_is_num = !Number.isNaN(nb);
+
+      // Case 1: both numeric → numeric compare
+      if (a_is_num && b_is_num) {
+        return asc ? (na - nb) : (nb - na);
       }
+
+      // Case 2: only one is numeric → treat both as strings
+      // This avoids inconsistent ordering
+      let sa = String(va);
+      let sb = String(vb);
+
+      // Case 3: pure string sort A-Z or Z-A
+      return asc ? sa.localeCompare(sb) : sb.localeCompare(sa);
+    }
+
+      
       data.sort(function(a, b){
-        if (pcol && (pcol in a) && (pcol in b)) {
+        if (
+          pcol &&
+          Object.prototype.hasOwnProperty.call(a, pcol) &&
+          Object.prototype.hasOwnProperty.call(b, pcol)
+        ) {
+
           var c = cmp(a,b,pcol,pord);
           if (c !== 0) return c;
         }
-        if (scol && scol !== '(none)' && (scol in a) && (scol in b)) {
+        if (
+          scol &&
+          scol !== '(none)' &&
+          scol.trim() !== '' &&
+          Object.prototype.hasOwnProperty.call(a, scol) &&
+          Object.prototype.hasOwnProperty.call(b, scol)
+        )
+        {
           var d = cmp(a,b,scol,sord);
           if (d !== 0) return d;
         }
         return 0;
       });
+
       return data;
     }
 
@@ -735,19 +851,25 @@ DETAILS_UI = r"""
     function render() {
       var rowsAll = Array.isArray(P.rows) ? P.rows.slice() : [];
       var rowsF = applyFilters(rowsAll);
+      rowsF = applyClientDedupe(rowsF, currentDupPolicy, xcol, colorCol);
 
       var ptype = plotTypeSelect.value || 'bar';
       var xcol = xSelect.value || '';
       var ycol = ySelect.value || '';
+      var currentDupPolicy = dupPolicySelect.value || "overlay";
+
+      var pcol = sortPrimary.value.trim();
+      var scol = sortSecondary.value.trim();
+      rowsF = sortRows(rowsF, pcol, sortPrimaryOrder.value, scol, sortSecondaryOrder.value);
 
       // Sort before subsetting
       rowsF = sortRows(rowsF, sortPrimary.value, sortPrimaryOrder.value, sortSecondary.value, sortSecondaryOrder.value);
 
-      // Bars count (subset)
+      
+      // Bars count (viewport only; do NOT slice data)
       var nBars = parseInt(barsCount.value || '0', 10);
-      if (Number.isFinite(nBars) && nBars > 0 && rowsF.length > nBars) {
-        rowsF = rowsF.slice(0, nBars);
-      }
+      if (!Number.isFinite(nBars) || nBars <= 0) nBars = null;
+
 
       var detailCols = P.detail_cols || [];
       var colorCol = P.color_col || null;
@@ -787,7 +909,7 @@ DETAILS_UI = r"""
         }
 
         var traces = [];
-        if ((P.dup_policy || 'overlay') === 'stack') {
+        if (currentDupPolicy === 'stack') {
           // group by category, stack layers
           var catMap = new Map();
           for (var i = 0; i < x.length; i++) {
@@ -824,6 +946,7 @@ DETAILS_UI = r"""
               name: ('layer ' + (layer+1))
             });
           }
+          
           Plotly.react(plotEl, traces, {
             title: P.title || (ycol + ' by ' + xcol),
             template: 'plotly_white',
@@ -841,12 +964,10 @@ DETAILS_UI = r"""
               tickmode: 'array',
               tickvals: categories,
               ticktext: ticktext,
+              // NEW:
+              range: (nBars ? [-0.5, Math.min(categories.length, nBars) - 0.5] : undefined),
             },
-            yaxis: {
-              title: { text: ycol },
-              automargin: true,
-              title_standoff: 10,
-            },
+            yaxis: { title: { text: ycol }, automargin: true, title_standoff: 10 },
             barmode: 'stack'
           });
         } else {
@@ -860,6 +981,7 @@ DETAILS_UI = r"""
             unselected: { marker: { opacity: 0.5 } },
             hovertemplate: makeHover(detailCols, 'v'),
           };
+          
           Plotly.react(plotEl, [trace], {
             title: P.title || (ycol + ' by ' + xcol),
             template: 'plotly_white',
@@ -877,12 +999,10 @@ DETAILS_UI = r"""
               tickmode: 'array',
               tickvals: categories,
               ticktext: ticktext,
+              // NEW:
+              range: (nBars ? [-0.5, Math.min(categories.length, nBars) - 0.5] : undefined),
             },
-            yaxis: {
-              title: { text: ycol },
-              automargin: true,
-              title_standoff: 10,
-            },
+            yaxis: { title: { text: ycol }, automargin: true, title_standoff: 10 },
             barmode: 'overlay'
           });
         }
@@ -932,6 +1052,7 @@ DETAILS_UI = r"""
     sortPrimaryOrder.addEventListener('change', render);
     sortSecondary.addEventListener('change', render);
     sortSecondaryOrder.addEventListener('change', render);
+    dupPolicySelect.addEventListener('change', render);
     Object.values(filterEls).forEach(function(sel){ sel.addEventListener('change', render); });
     Object.values(searchEls).forEach(function(box){ box.addEventListener('input', render); });
 
@@ -957,6 +1078,7 @@ DETAILS_UI = r"""
         searchEls[scol].value = (searchDefaults[scol] || '');
       }
       selectedKeys = [];
+      firstRender = false;
       render();
     });
 
