@@ -1,6 +1,26 @@
 # universal_plot_maker_plus
 
-# 1)Script
+# 1) Introduction
+
+universal_plot_maker_plus.py is a flexible and general‑purpose interactive plotting tool for exploring large tabular datasets (TSV/CSV). It produces a self‑contained HTML file with dynamic controls that allow end‑users to switch axes, filter data, search, sort, zoom, and export selected subsets — all without requiring Python or Plotly installed.
+This tool is especially useful for high‑dimensional biological datasets (gene‑level, cell‑type‑level, enrichment tables, marker tables, scoring matrices, etc.) where the user needs:
+
+Dynamic X/Y axis switching
+Multiple Y metrics (raw/log/penalized/etc.)
+Drop‑down filters (cell type / group / class / cluster…)
+Multiple search fields
+Sorting by any column
+Duplicate handling
+Click‑to‑inspect rows
+Client‑side TSV export of selected points
+Optional embedding of Plotly.js for offline sharing
+
+You control the initial state of the figure entirely through the CLI, and the resulting HTML contains a fully reactive UI that lets end‑users interact with the dataset in real time.
+
+# 2)Script
+Following is the python script 
+
+universal_plot_maker_plus.py
 ```py
 
 #!/usr/bin/env python3
@@ -1181,3 +1201,81 @@ python universal_plot_maker_plus.py \
   --self-contained \
   --lang en
 ```
+# 3) 🧰 Command‑Line Interface (CLI) — Full Help
+
+Below is the complete list of CLI options supported by `universal_plot_maker_plus.py`, with explanations of what each command does and how it affects the resulting interactive HTML plot.
+
+---
+
+## 📥 Input / Output
+
+### `--file`, `-f`
+Path to the input TSV/CSV file.
+
+### `--out`, `-o`
+Output HTML file path.  
+Default: `interactive_plot.html`
+
+### `--sep`
+Manually specify a field separator.  
+If omitted, auto‑detected based on file extension (`.tsv`, `.csv`, etc.).
+
+---
+
+## 📊 Plot Configuration
+
+### `--plot-type {bar,scatter,line}`
+Initial plot type shown in the viewer.  
+End users can still change plot type later.
+
+### `--title`
+Title displayed at the top of the plot.
+
+### `--color-col`
+Column used for coloring points or bars.  
+Each unique category is mapped to a unique color.
+
+---
+
+## 🧭 Axis Selection
+
+### `--x-choices`
+List of allowed X‑axis columns.  
+Use `|` or `,` to separate multiple options.
+
+### `--y-choices`
+List of allowed Y‑axis columns (typically numeric).  
+Use `|` or `,` to separate multiple options.
+
+### `--default-x`
+The X‑axis column selected at initial load.
+
+### `--default-y`
+The Y‑axis column selected at initial load.
+
+---
+
+## 🎚️ Sorting
+
+### `--sort-primary`
+Primary sort column used before plotting.
+
+### `--sort-primary-order {asc,desc}`
+Sorting direction for primary sort.
+
+### `--sort-secondary`
+Optional secondary sort column.
+
+### `--sort-secondary-order {asc,desc}`
+Sorting direction for secondary sort.
+
+---
+
+## 🔍 Filtering & Searching
+
+### `--filter-cols`
+List of columns exposed as dropdown filters in the HTML viewer.
+
+### `--filter-defaults`
+Default filter selections in the format:
+``
