@@ -258,11 +258,13 @@ def build_figure_payload(
 
     # ---- Colors ----
     if color_col and color_col in df.columns:
-        cats = sorted(df[color_col].astype(str).unique())
-        palette = [
-            "#636EFA", "#EF553B", "#00CC96", "#AB63FA", "#FFA15A",
-            "#19D3F3", "#FF6692", "#B6E880", "#FF97FF", "#FECB52",
-        ]
+        cats = sorted(df[color_col].astype(str).unique())      
+        from plotly.express import colors
+        palette = (
+            colors.qualitative.Dark24 +
+            colors.qualitative.Light24 +
+            colors.qualitative.Set3
+        )
         color_map = {c: palette[i % len(palette)] for i, c in enumerate(cats)}
         bar_colors = df[color_col].astype(str).map(lambda c: color_map.get(c, "#636EFA")).tolist()
     else:
@@ -893,18 +895,19 @@ DETAILS_UI = r"""
       // Build colors for current colorCol (client-side)
       var colorMap = {}; 
       var palette = [
-        '#636EFA', '#EF553B', '#00CC96', '#AB63FA', '#FFA15A',
-       '#19D3F3', '#FF6692', '#B6E880', '#FF97FF', '#FECB52'
+          "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b",
+          "#e377c2", "#7f7f7f", "#bcbd22", "#17becf",
+          "#393b79", "#5254a3", "#6b6ecf", "#9c9ede",
+          "#c6d31", "#bd9e39", "#e7ba52", "#e7cb94",
+          "#843c39", "#ad494a", "#d6616b", "#e7969c",
+          "#7b4173", "#a55194", "#ce6dbd", "#de9ed6"
       ];
-
       // Collect unique categories from the rows to be plotted (rowsF)
       if (colorCol) {
-        var cats = [];
-        for (var i = 0; i < rowsF.length; i++) {
-          var r = rowsF[i];
-          var g = (r[colorCol] != null ? String(r[colorCol]) : '');
-          if (cats.indexOf(g) === -1) cats.push(g);
-        }
+          // collect all possible categories from ALL rows (not only filtered)
+          var cats = Array.from(new Set(P.rows.map(r =>
+              r[colorCol] != null ? String(r[colorCol]) : ""
+          ))).sort();
         cats.sort();
         for (var i = 0; i < cats.length; i++) {
           colorMap[cats[i]] = palette[i % palette.length];
@@ -919,8 +922,7 @@ DETAILS_UI = r"""
         var c = (colorCol && colorMap[gval]) ? colorMap[gval] : '#636EFA';
         colors.push(c);
       }
-      var colorMap = P.color_map || {};
-      var colors = [];
+      
 
       // Collect data arrays
       var x = [], y = [], customdata = [];
@@ -1351,6 +1353,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 ```
 # 2)Run
 ```
