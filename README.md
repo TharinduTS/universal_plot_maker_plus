@@ -37,7 +37,7 @@ Universal interactive plot maker (generalized)
   * Initial zoom (#bars)
   * Click for details (columns chosen via CLI)
   * TSV export of selected points (lasso/box)
-- Duplicate handling: overlay | stack | max | mean | median | first | sum
+- Duplicate handling: overlay | stack | max | mean | median | first | sum | separate
 
 Example (with your dataframe columns):
     python universal_plot_maker_plus.py \
@@ -275,6 +275,21 @@ def build_figure_payload(
     if dup_policy.lower() in ("max", "mean", "median", "first", "sum"):
         key_cols = [x_col] + ([color_col] if color_col else [])
         df = dedupe_rows(df, key_cols=key_cols, value_col=y_col, policy=dup_policy)
+    elif dup_policy.lower() == "separate":
+        # Split duplicates into distinct x categories by suffixing with an index
+        # Only append "#n" for actual duplicates (groups with size > 1)
+        df = df.copy()
+        dup_count = df.groupby([x_col], dropna=False)[x_col].transform("size")
+        df["_dup_index"] = df.groupby([x_col], dropna=False).cumcount() + 1
+        df[x_col] = np.where(
+            dup_count > 1,
+            df[x_col].astype(str) + "_#" + df["_dup_index"].astype(str),
+            df[x_col].astype(str)
+        )
+        df.drop(columns="_dup_index", inplace=True, errors="ignore")
+
+
+
 
     # ---- Details (customdata) ALWAYS defined as list-of-lists ----
     detail_cols = [c for c in details_cols if c in df.columns]
@@ -334,8 +349,11 @@ def build_figure_payload(
                 marker=dict(color=bar_colors),
                 customdata=customdata,
                 hovertemplate=_make_hover_template(detail_cols, orientation="v"),
-            ))
-            fig.update_layout(barmode="overlay")
+            ))  
+            if dup_policy.lower() == "separate":
+                fig.update_layout(barmode="group")
+            else:
+                fig.update_layout(barmode="overlay")
 
         fig.update_layout(
             title=title or f"{y_col} by {x_col}",
@@ -466,6 +484,7 @@ DETAILS_UI = r"""
         <option value="median">median</option>
         <option value="first">first</option>
         <option value="sum">sum</option>
+        <option value="separate">separate</option>
       </select>
     </div>
     <div>
@@ -595,7 +614,6 @@ DETAILS_UI = r"""
     var colorCol = colorBySelect.value;
     if (colorCol === '(none)') colorCol = null;
 
-
     if (firstRender) {
         // Use CLI defaults on first load
         sortPrimaryOrder.value = UI.sort_primary_order || 'desc';
@@ -723,50 +741,69 @@ DETAILS_UI = r"""
     
     function applyClientDedupe(rows, policy, xcol, colorCol) {
       policy = policy || "overlay";
-      if (policy === "overlay" || policy === "stack")
-        return rows;  // no collapsing
-
-      // collapse duplicates into one row per category
-      function key(r) {
-        return colorCol ? (String(r[xcol]) + "||" + String(r[colorCol])) :
-                          String(r[xcol]);
+      // Implement "separate" dynamically in the browser:
+      // suffix duplicates as _#1, _#2, ... so each becomes its own category.
+      if (policy === "separate") {
+        // Shallow copy so we don't mutate P.rows
+        var out = rows.map(r => Object.assign({}, r));
+        // Count occurrences per X (BEFORE renaming)
+        var counts = new Map();
+        for (var r0 of out) {
+          var k = String(r0[xcol]); // number per X only
+          counts.set(k, (counts.get(k) || 0) + 1);
+        }
+        // For duplicated X's, add a running index; leave singletons untouched
+        var seen = new Map(); // key -> count
+        for (var i = 0; i < out.length; i++) {
+          var r = out[i];
+          var key = String(r[xcol]); // number per X only
+          if ((counts.get(key) || 0) > 1) {
+            var cnt = (seen.get(key) || 0) + 1;
+            seen.set(key, cnt);
+            r[xcol] = key + "_#" + String(cnt);
+         } else {
+            r[xcol] = key; // keep singleton label
+          }
+        }
+        return out;
       }
 
+
+      // overlay/stack: no collapsing, keep categories untouched
+      if (policy === "overlay" || policy === "stack")
+        return rows;
+      // Collapse duplicates for aggregate modes (max/mean/median/first/sum)
+      function key(r) {
+        return colorCol ? (String(r[xcol]) + "||" + String(r[colorCol]))
+                    : String(r[xcol]);
+      }
       var groups = {};
       for (var r of rows) {
         var k = key(r);
         if (!(k in groups)) groups[k] = [];
         groups[k].push(r);
       }
-
       var valCol = ySelect.value;
       var output = [];
-
       for (var k in groups) {
         var g = groups[k];
-        var base = g[0];  // row to copy metadata from
+        var base = g[0];
         var nums = g.map(r => Number(r[valCol])).filter(n => !Number.isNaN(n));
-
         if (nums.length === 0) nums = [0];
-
         var newVal;
         switch (policy) {
           case "first":  newVal = nums[0]; break;
           case "max":    newVal = Math.max(...nums); break;
           case "mean":   newVal = nums.reduce((a,b)=>a+b,0)/nums.length; break;
-          case "median":
-            nums.sort((a,b)=>a-b);
-            newVal = nums[Math.floor(nums.length/2)];
-            break;
+          case "median": nums.sort((a,b)=>a-b);
+                         newVal = nums[Math.floor(nums.length/2)]; break;
           case "sum":    newVal = nums.reduce((a,b)=>a+b,0); break;
           default:       newVal = nums[0];
         }
-
         var newRow = JSON.parse(JSON.stringify(base));
         newRow[valCol] = newVal;
         output.push(newRow);
       }
-
       return output;
     }
 
@@ -867,7 +904,6 @@ DETAILS_UI = r"""
     function render() {
       var rowsAll = Array.isArray(P.rows) ? P.rows.slice() : [];
       var rowsF = applyFilters(rowsAll);
-      rowsF = applyClientDedupe(rowsF, currentDupPolicy, xcol, colorCol);
 
       var ptype = plotTypeSelect.value || 'bar';
       var xcol = xSelect.value || '';
@@ -889,6 +925,9 @@ DETAILS_UI = r"""
 
       var detailCols = P.detail_cols || [];
       var colorCol = colorBySelect.value || null;
+      if (colorCol === '(none)') colorCol = null;
+      rowsF = applyClientDedupe(rowsF, currentDupPolicy, xcol, colorCol);
+      
 
       // custom color by
 
@@ -898,7 +937,7 @@ DETAILS_UI = r"""
           "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b",
           "#e377c2", "#7f7f7f", "#bcbd22", "#17becf",
           "#393b79", "#5254a3", "#6b6ecf", "#9c9ede",
-          "#c6d31", "#bd9e39", "#e7ba52", "#e7cb94",
+          "#c6d31f", "#bd9e39", "#e7ba52", "#e7cb94",
           "#843c39", "#ad494a", "#d6616b", "#e7969c",
           "#7b4173", "#a55194", "#ce6dbd", "#de9ed6"
       ];
@@ -927,14 +966,6 @@ DETAILS_UI = r"""
       // Collect data arrays
       var x = [], y = [], customdata = [];
       var categories = [], ticktext = [];
-
-      // Determine colors
-      for (var i = 0; i < rowsF.length; i++) {
-        var r = rowsF[i];
-        var gval = colorCol ? String(r[colorCol]) : null;
-        var color = (gval && colorMap[gval]) ? colorMap[gval] : '#636EFA';
-        colors.push(color);
-      }
 
       // Build x,y/customdata based on plot type
       if (ptype === 'bar') {
@@ -1051,7 +1082,7 @@ DETAILS_UI = r"""
               range: (nBars ? [-0.5, Math.min(categories.length, nBars) - 0.5] : undefined),
             },
             yaxis: { title: { text: ycol }, automargin: true, title_standoff: 10 },
-            barmode: 'overlay'
+            barmode: (currentDupPolicy === 'separate' ? 'group' : 'overlay')
           });
         }
 
@@ -1267,8 +1298,9 @@ def main():
     ap.add_argument("--sort-primary-order", default="desc", choices=["asc","desc"], help="Primary sort order")
     ap.add_argument("--sort-secondary", help="Secondary sort column (optional)")
     ap.add_argument("--sort-secondary-order", default="desc", choices=["asc","desc"], help="Secondary sort order")
-    ap.add_argument("--dup-policy", default="overlay", choices=["overlay","stack","max","mean","median","first","sum"],
-                    help="Duplicate policy: overlay/stack for visual; max/mean/median/first/sum collapse pre-plot.")
+    ap.add_argument("--dup-policy", default="overlay",
+        choices=["overlay","stack","max","mean","median","first","sum","separate"],
+        help="Duplicate policy: overlay/stack for visual; max/mean/median/first/sum collapse pre-plot; separate splits duplicates           into distinct bars.")
     ap.add_argument("--show-legend", action="store_true", help="Show legend (hidden otherwise)")
     ap.add_argument("--self-contained", action="store_true", help="Embed plotly.js for offline HTML")
     ap.add_argument("--lang", default="en", help="HTML lang attribute (e.g., 'en', 'en-CA')")
@@ -1353,6 +1385,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 ```
 # 2)Run
@@ -1500,6 +1533,7 @@ Defines how duplicate X‑values (or X+color pairs) are handled:
 | `median` | Use the median |
 | `first` | Keep first occurrence |
 | `sum` | Sum all duplicates |
+| `separate` | adds seperate bars for duplicates |
 
 ---
 
