@@ -273,7 +273,7 @@ def build_figure_payload(
 
     # ---- Dedupe (collapse where applicable) ----
     if dup_policy.lower() in ("max", "mean", "median", "first", "sum"):
-        key_cols = [x_col] + ([color_col] if color_col else [])
+        key_cols = [x_col]
         df = dedupe_rows(df, key_cols=key_cols, value_col=y_col, policy=dup_policy)
     elif dup_policy.lower() == "separate":
         # Split duplicates into distinct x categories by suffixing with an index
@@ -600,11 +600,16 @@ DETAILS_UI = r"""
     var prevPrimary = sortPrimary.value;
     var prevPrimaryOrder = sortPrimaryOrder.value;
     
-    // Primary
-    fillSelect(sortPrimary, sortChoices, prevPrimary || UI.sort_primary || '');
+    
+    // Always ensure Y column is available as a sort option
+    var dynamicSortChoices = [ySelect.value].concat(
+        sortChoices.filter(c => c !== ySelect.value)
+    );
 
-    // Secondary
-    fillSelect(sortSecondary,sortChoices, prevSecondary || UI.sort_secondary || '(none)');
+    // Fill sort menus with dynamic choices
+    fillSelect(sortPrimary, dynamicSortChoices, sortPrimary.value || ySelect.value);
+    fillSelect(sortSecondary, dynamicSortChoices, sortSecondary.value || '(none)');
+
     
     //fillselect for color  by
     var prevColorBy = colorBySelect.value;
@@ -774,8 +779,7 @@ DETAILS_UI = r"""
         return rows;
       // Collapse duplicates for aggregate modes (max/mean/median/first/sum)
       function key(r) {
-        return colorCol ? (String(r[xcol]) + "||" + String(r[colorCol]))
-                    : String(r[xcol]);
+        return String(r[xcol]);
       }
       var groups = {};
       for (var r of rows) {
@@ -912,10 +916,31 @@ DETAILS_UI = r"""
 
       var pcol = sortPrimary.value.trim();
       var scol = sortSecondary.value.trim();
-      rowsF = sortRows(rowsF, pcol, sortPrimaryOrder.value, scol, sortSecondaryOrder.value);
 
-      // Sort before subsetting
-      rowsF = sortRows(rowsF, sortPrimary.value, sortPrimaryOrder.value, sortSecondary.value, sortSecondaryOrder.value);
+
+      // First apply duplicate policy → modifies Y to sum/mean/etc
+      rowsF = applyClientDedupe(rowsF, currentDupPolicy, xcol, colorCol);
+
+      // Restore CLI default sorting ON FIRST RENDER ONLY
+      if (firstRender) {
+          // Apply CLI's default primary sort column & order
+          sortPrimary.value = UI.sort_primary || '';
+          sortPrimaryOrder.value = UI.sort_primary_order || 'desc';
+
+          // Apply CLI's default secondary sort, if any
+          sortSecondary.value = UI.sort_secondary || '(none)';
+          sortSecondaryOrder.value = UI.sort_secondary_order || 'desc';
+      }
+
+
+      // THEN sort using the aggregated values
+      rowsF = sortRows(
+          rowsF,
+          sortPrimary.value,
+          sortPrimaryOrder.value,
+          sortSecondary.value,
+          sortSecondaryOrder.value
+      );
 
       
       // Bars count (viewport only; do NOT slice data)
@@ -926,7 +951,8 @@ DETAILS_UI = r"""
       var detailCols = P.detail_cols || [];
       var colorCol = colorBySelect.value || null;
       if (colorCol === '(none)') colorCol = null;
-      rowsF = applyClientDedupe(rowsF, currentDupPolicy, xcol, colorCol);
+
+     
       
 
       // custom color by
@@ -1120,6 +1146,7 @@ DETAILS_UI = r"""
           yaxis: { title: { text: ycol }, automargin: true, title_standoff: 10 },
         });
       }
+      firstRender = false;
     }
 
     // Bind changes
@@ -1385,6 +1412,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 ```
